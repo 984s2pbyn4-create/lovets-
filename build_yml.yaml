@@ -1,0 +1,86 @@
+# Автосборка ЛОВЕЦ (Lovets) для Windows / macOS / Linux. By il_klmv
+name: build
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: Windows }
+          - { os: macos-14,       name: macOS }
+          - { os: ubuntu-22.04,   name: Linux }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip sources
+        shell: bash
+        run: cmake -E tar xf Lovets-v1.0.0-source.zip
+
+      - name: JUCE
+        run: git clone --depth 1 --branch 8.0.4 https://github.com/juce-framework/JUCE.git JUCE
+
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libcurl4-openssl-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev ninja-build
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p out
+          A=build/Lovets_artefacts/Release
+          cp -R "$A/VST3/Lovets.vst3" out/
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            cp -R "$A/AU/Lovets.component" out/
+            cp -R "$A/Standalone/Lovets.app" out/
+            codesign --force --deep -s - out/Lovets.vst3 out/Lovets.component out/Lovets.app
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            cp "$A/Standalone/Lovets.exe" out/
+          else
+            cp "$A/Standalone/Lovets" out/
+          fi
+          cp README.md out/
+
+      - name: macOS installer (.pkg)
+        if: runner.os == 'macOS'
+        run: |
+          S=pkgroot
+          mkdir -p "$S/Library/Audio/Plug-Ins/VST3" "$S/Library/Audio/Plug-Ins/Components" "$S/Applications" scripts
+          cp -R out/Lovets.vst3 "$S/Library/Audio/Plug-Ins/VST3/"
+          cp -R out/Lovets.component "$S/Library/Audio/Plug-Ins/Components/"
+          cp -R out/Lovets.app "$S/Applications/"
+          # фиксированные пути установки (без «перемещаемых» бандлов)
+          pkgbuild --analyze --root "$S" comp.plist
+          n=$(/usr/libexec/PlistBuddy -c "Print" comp.plist | grep -c "BundleIsRelocatable")
+          for ((i=0; i<n; i++)); do /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" comp.plist; done
+          # после установки — сбросить кэш AU, чтобы Logic сразу увидел плагин
+          printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar 2>/dev/null\nexit 0\n' > scripts/postinstall
+          chmod +x scripts/postinstall
+          pkgbuild --root "$S" --component-plist comp.plist --scripts scripts \
+                   --identifier com.ilklmv.lovets.pkg --version 1.0.0 --install-location / Lovets-core.pkg
+          productbuild --package Lovets-core.pkg "out/Lovets-1.0.0-macOS-Installer.pkg"
+          rm -rf out/Lovets.vst3 out/Lovets.component out/Lovets.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lovets-${{ matrix.name }}
+          path: out
