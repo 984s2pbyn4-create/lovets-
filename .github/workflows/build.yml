@@ -70,8 +70,12 @@ jobs:
           cp -R out/Lovets.app "$S/Applications/"
           # фиксированные пути установки (без «перемещаемых» бандлов)
           pkgbuild --analyze --root "$S" comp.plist
-          n=$(/usr/libexec/PlistBuddy -c "Print" comp.plist | grep -c "BundleIsRelocatable")
-          for ((i=0; i<n; i++)); do /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" comp.plist; done
+          i=0
+          while /usr/libexec/PlistBuddy -c "Print :$i" comp.plist >/dev/null 2>&1; do
+            /usr/libexec/PlistBuddy -c "Delete :$i:BundleIsRelocatable" comp.plist 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" comp.plist
+            i=$((i+1))
+          done
           # после установки — сбросить кэш AU, чтобы Logic сразу увидел плагин
           printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar 2>/dev/null\nexit 0\n' > scripts/postinstall
           chmod +x scripts/postinstall
