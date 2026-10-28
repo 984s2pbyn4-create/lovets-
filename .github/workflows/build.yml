@@ -80,8 +80,8 @@ jobs:
           printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar 2>/dev/null\nexit 0\n' > scripts/postinstall
           chmod +x scripts/postinstall
           pkgbuild --root "$S" --component-plist comp.plist --scripts scripts \
-                   --identifier com.ilklmv.lovets.pkg --version 1.0.1 --install-location / Lovets-core.pkg
-          productbuild --package Lovets-core.pkg "out/Lovets-1.0.1-macOS-Installer.pkg"
+                   --identifier com.ilklmv.lovets.pkg --version 1.0.2 --install-location / Lovets-core.pkg
+          productbuild --package Lovets-core.pkg "out/Lovets-1.0.2-macOS-Installer.pkg"
           rm -rf out/Lovets.vst3 out/Lovets.component out/Lovets.app
 
       - uses: actions/upload-artifact@v4
